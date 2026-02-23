@@ -1,42 +1,52 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-import sglang.srt.managers.mm_utils as mm_utils
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from sglang.srt.configs.model_config import ModelConfig
-from sglang.srt.layers.rotary_embedding import MRotaryEmbedding
-from sglang.srt.managers.mm_utils import (
-    MultiModalityDataPaddingPatternMultimodalTokens,
-    init_mm_embedding_cache,
-)
-from sglang.srt.managers.schedule_batch import (
-    Modality,
-    MultimodalDataItem,
-    MultimodalInputs,
-    Req,
-    ScheduleBatch,
-)
-
-# - prepare_mlp_sync_batch_raw is now a module-level function, not a Scheduler method
-from sglang.srt.managers.scheduler_dp_attn_mixin import prepare_mlp_sync_batch_raw
-from sglang.srt.mem_cache.cache_init_params import CacheInitParams
-from sglang.srt.mem_cache.radix_cache import RadixCache
-from sglang.srt.model_executor.forward_batch_info import CaptureHiddenMode, ForwardBatch
-from sglang.srt.multimodal.processors.base_processor import BaseMultimodalProcessor
-from sglang.srt.sampling.sampling_params import SamplingParams
-from sglang.srt.server_args import ServerArgs
-from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
-from sglang.srt.utils import require_mlp_sync, require_mlp_tp_gather
 from transformers import AutoModelForCausalLM
 
 from specforge.distributed import get_tp_device_mesh, get_tp_group
 from specforge.utils import padding
 
-from .sglang_backend import SGLangRunner, wrap_eagle3_logits_processors_in_module
-from .sglang_backend.utils import LogitsProcessorForEAGLE3
+_SGLANG_IMPORT_ERROR: Optional[Exception] = None
+_SGLANG_AVAILABLE = False
+try:
+    import sglang.srt.managers.mm_utils as mm_utils
+    from sglang.srt.configs.model_config import ModelConfig
+    from sglang.srt.layers.rotary_embedding import MRotaryEmbedding
+    from sglang.srt.managers.mm_utils import (
+        MultiModalityDataPaddingPatternMultimodalTokens,
+        init_mm_embedding_cache,
+    )
+    from sglang.srt.managers.schedule_batch import (
+        Modality,
+        MultimodalDataItem,
+        MultimodalInputs,
+        Req,
+        ScheduleBatch,
+    )
+    from sglang.srt.managers.scheduler import Scheduler
+    from sglang.srt.mem_cache.cache_init_params import CacheInitParams
+    from sglang.srt.mem_cache.radix_cache import RadixCache
+    from sglang.srt.model_executor.forward_batch_info import (
+        CaptureHiddenMode,
+        ForwardBatch,
+    )
+    from sglang.srt.multimodal.processors.base_processor import BaseMultimodalProcessor
+    from sglang.srt.sampling.sampling_params import SamplingParams
+    from sglang.srt.server_args import ServerArgs
+    from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
+    from sglang.srt.utils import require_mlp_sync, require_mlp_tp_gather
+
+    from .sglang_backend import SGLangRunner, wrap_eagle3_logits_processors_in_module
+    from .sglang_backend.utils import LogitsProcessorForEAGLE3
+    _SGLANG_AVAILABLE = True
+except Exception as e:
+    _SGLANG_IMPORT_ERROR = e
 
 
 @dataclass
@@ -303,6 +313,11 @@ class SGLangEagle3TargetModel(Eagle3TargetModel):
         trust_remote_code: bool = False,
         **kwargs,
     ) -> "SGLangEagle3TargetModel":
+        if not _SGLANG_AVAILABLE:
+            raise ImportError(
+                "SGLang backend is unavailable in this environment. "
+                "Use --target-model-backend hf/custom, or install/fix sglang dependencies."
+            ) from _SGLANG_IMPORT_ERROR
         tp_size = dist.get_world_size(get_tp_group())
         # NOTE: sglang 0.5.9 requires dtype to be non-None
         # If torch_dtype is None, use "auto" to let sglang decide the dtype
