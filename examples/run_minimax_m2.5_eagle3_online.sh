@@ -9,6 +9,12 @@ ROOT_DIR=$(dirname "$SCRIPT_DIR")
 # ============================================================
 # 2) Runtime Environment
 # ============================================================
+export CUDA_HOME=/home/scratch.svc_compute_arch/release/cuda_toolkit/internal/cuda-37366466
+export CUDACXX="$CUDA_HOME/bin/nvcc"
+export PATH="$CUDA_HOME/bin:${PATH}"
+export LD_LIBRARY_PATH="$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
+export TMPDIR=/home/scratch.fengyul_coreai/.tmp
+mkdir -p "$TMPDIR"
 export TORCHINDUCTOR_CACHE_DIR="$ROOT_DIR/cache/compiled_kernels"
 export PYTHONPATH="$ROOT_DIR/scripts:${PYTHONPATH:-}"
 export SGLANG_ENABLE_JIT_DEEPGEMM="${SGLANG_ENABLE_JIT_DEEPGEMM:-0}"
@@ -16,8 +22,8 @@ export SGLANG_ENABLE_JIT_DEEPGEMM="${SGLANG_ENABLE_JIT_DEEPGEMM:-0}"
 # ============================================================
 # 3) Launch Parameters
 # ============================================================
-NUM_GPUS=${1:-1}
-TP_SIZE=${2:-1}
+NUM_GPUS=${1:-8}
+TP_SIZE=${2:-8}
 BUILD_DATASET_NUM_PROC=${BUILD_DATASET_NUM_PROC:-64}
 TARGET_MODEL_PATH=${TARGET_MODEL_PATH:-/home/scratch.fengyul_coreai/model_ckpt/MiniMax-M2.5}
 TARGET_MODEL_BACKEND=${TARGET_MODEL_BACKEND:-sglang}
@@ -37,15 +43,17 @@ torchrun \
     --sglang-attention-backend "$SGLANG_ATTENTION_BACKEND" \
     --sglang-ep-size "$SGLANG_EP_SIZE" \
     --draft-model-config "$ROOT_DIR/configs/minimax-m2.5-eagle3.json" \
-    --train-data-path "$ROOT_DIR/cache/dataset/ultrachat_train.jsonl" \
+    --train-data-path /home/scratch.fengyul_coreai/minimax_data/train_specforge_200k_trunc.jsonl \
     --build-dataset-num-proc "$BUILD_DATASET_NUM_PROC" \
-    --output-dir "$ROOT_DIR/outputs/minimax-m2.5-eagle3-ultrachat" \
-    --num-epochs 2 \
+    --output-dir "$ROOT_DIR/outputs/minimax-m2.5-eagle3-nvcf" \
+    --num-epochs 1 \
     --batch-size 1 \
     --tp-size "$TP_SIZE" \
     --learning-rate 1e-4 \
     --max-length 4096 \
+    --save-interval 5000 \
     --chat-template minimax-m2 \
     --cache-dir "$ROOT_DIR/cache" \
     --report-to tensorboard \
-    --log-interval 10
+    --log-interval 10 \
+    --dist-timeout 120
